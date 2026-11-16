@@ -1,0 +1,24 @@
+server:
+  port: ${SERVER_PORT:8090}
+
+spring:
+  application:
+    name: kafka-admin
+
+app:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    security-protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
+    request-timeout: ${KAFKA_REQUEST_TIMEOUT:10s}
+    default-partitions: ${KAFKA_DEFAULT_PARTITIONS:3}
+    default-replication-factor: ${KAFKA_DEFAULT_REPLICATION_FACTOR:1}
+    write-enabled: ${KAFKA_ADMIN_WRITE_ENABLED:true}
+    analytics-topics: ${KAFKA_ANALYTICS_TOPICS:rutaexpress.shipments.events.v1,rutaexpress.shipments.analytics.v1,rutaexpress.shipments.events.v1.DLT}
+    protected-topics: ${KAFKA_PROTECTED_TOPICS:rutaexpress.shipments.events.v1,rutaexpress.shipments.analytics.v1,rutaexpress.shipments.events.v1.DLT,__consumer_offsets}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
