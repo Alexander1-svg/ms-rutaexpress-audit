@@ -1,0 +1,161 @@
+# Arquitectura Kafka de RutaExpress: 1 Zookeeper + 3 brokers.
+#
+#   docker compose up -d                       # Zookeeper, 3 brokers y creación de tópicos
+#   docker compose --profile app up -d --build # además, este microservicio (kafka-admin)
+#
+# Kafka-UI está en docker-compose.kafka-ui.yml y se une a la misma red.
+# Las variables opcionales están documentadas en .env.example.
+
+x-kafka-broker: &kafka-broker
+  image: confluentinc/cp-kafka:7.9.6
+  restart: unless-stopped
+  depends_on:
+    zookeeper:
+      condition: service_healthy
+  networks: [kafka]
+
+x-kafka-env: &kafka-env
+  KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+  # INTERNAL: tráfico entre brokers y contenedores de la red "rutaexpress-kafka".
+  # EXTERNAL: clientes que corren fuera de Docker (IntelliJ, el host o otra máquina).
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+  KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+  KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+  KAFKA_MIN_INSYNC_REPLICAS: 2
+  # Los tópicos los crea kafka-init-topics o kafka-admin, nunca un cliente por accidente.
+  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+  # En una EC2 pequeña se puede bajar, por ejemplo "-Xms256m -Xmx384m".
+  KAFKA_HEAP_OPTS: "${KAFKA_HEAP_OPTS:--Xms256m -Xmx512m}"
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.9.6
+    container_name: rutaexpress-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
+    healthcheck:
+      test: ["CMD-SHELL", "echo srvr | nc -w 2 localhost 2181 | grep -q Mode"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [kafka]
+
+  kafka-1:
+    <<: *kafka-broker
+    container_name: rutaexpress-kafka-1
+    hostname: kafka-1
+    environment:
+      <<: *kafka-env
+      KAFKA_BROKER_ID: 1
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-1:29092,EXTERNAL://${KAFKA_EXTERNAL_HOST:-localhost}:9092
+    ports:
+      - "${KAFKA_BIND_ADDRESS:-127.0.0.1}:9092:9092"
+    volumes:
+      - kafka-1-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server kafka-1:29092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+
+  kafka-2:
+    <<: *kafka-broker
+    container_name: rutaexpress-kafka-2
+    hostname: kafka-2
+    environment:
+      <<: *kafka-env
+      KAFKA_BROKER_ID: 2
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-2:29092,EXTERNAL://${KAFKA_EXTERNAL_HOST:-localhost}:9093
+    ports:
+      - "${KAFKA_BIND_ADDRESS:-127.0.0.1}:9093:9093"
+    volumes:
+      - kafka-2-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server kafka-2:29092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+
+  kafka-3:
+    <<: *kafka-broker
+    container_name: rutaexpress-kafka-3
+    hostname: kafka-3
+    environment:
+      <<: *kafka-env
+      KAFKA_BROKER_ID: 3
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-3:29092,EXTERNAL://${KAFKA_EXTERNAL_HOST:-localhost}:9094
+    ports:
+      - "${KAFKA_BIND_ADDRESS:-127.0.0.1}:9094:9094"
+    volumes:
+      - kafka-3-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server kafka-3:29092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+
+  # Crea una sola vez los tópicos que usa kafka-analytics y termina.
+  # --if-not-exists permite volver a levantar el compose sin errores.
+  kafka-init-topics:
+    image: confluentinc/cp-kafka:7.9.6
+    container_name: rutaexpress-kafka-init-topics
+    restart: "no"
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        BOOTSTRAP=kafka-1:29092,kafka-2:29092,kafka-3:29092
+        for topic in rutaexpress.shipments.events.v1 rutaexpress.shipments.analytics.v1 rutaexpress.shipments.events.v1.DLT; do
+          kafka-topics --bootstrap-server "$$BOOTSTRAP" --create --if-not-exists \
+            --topic "$$topic" --partitions 3 --replication-factor 3 \
+            --config min.insync.replicas=2
+        done
+        kafka-topics --bootstrap-server "$$BOOTSTRAP" --list
+    networks: [kafka]
+
+  # Microservicio administrador. Solo se levanta con --profile app.
+  kafka-admin:
+    profiles: ["app"]
+    build: .
+    container_name: rutaexpress-kafka-admin
+    restart: unless-stopped
+    depends_on:
+      kafka-init-topics:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
+      KAFKA_DEFAULT_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+    ports:
+      - "${KAFKA_ADMIN_BIND_ADDRESS:-127.0.0.1}:8090:8090"
+    networks: [kafka]
+
+networks:
+  kafka:
+    # Nombre fijo para que Kafka-UI y kafka-analytics se unan desde sus propios compose.
+    name: rutaexpress-kafka
+
+volumes:
+  zookeeper-data:
+  zookeeper-log:
+  kafka-1-data:
+  kafka-2-data:
+  kafka-3-data:

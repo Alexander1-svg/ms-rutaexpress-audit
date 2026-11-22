@@ -1,0 +1,34 @@
+# Kafka-UI (Kafbat UI, fork mantenido de provectus/kafka-ui) para administrar
+# brokers, tópicos, mensajes y grupos de consumidores.
+#
+# Requiere que la arquitectura Kafka esté levantada antes:
+#   docker compose up -d
+#   docker compose -f docker-compose.kafka-ui.yml up -d
+#
+# Interfaz: http://localhost:8089 (o http://<IP-de-la-EC2>:8089).
+# Pide usuario y contraseña: define KAFKA_UI_PASSWORD en un archivo .env (ver .env.example),
+# que está ignorado por Git. Sin esa variable el compose no arranca.
+# En una EC2, abre el puerto 8089 solo para tu IP en el security group.
+
+services:
+  kafka-ui:
+    image: kafbat/kafka-ui:v1.1.0
+    container_name: rutaexpress-kafka-ui
+    restart: unless-stopped
+    environment:
+      KAFKA_CLUSTERS_0_NAME: rutaexpress
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
+      # Permite crear, editar y eliminar tópicos y publicar mensajes desde la interfaz.
+      KAFKA_CLUSTERS_0_READONLY: "false"
+      DYNAMIC_CONFIG_ENABLED: "false"
+      AUTH_TYPE: LOGIN_FORM
+      SPRING_SECURITY_USER_NAME: ${KAFKA_UI_USER:-admin}
+      SPRING_SECURITY_USER_PASSWORD: ${KAFKA_UI_PASSWORD:?Define KAFKA_UI_PASSWORD en el archivo .env}
+    ports:
+      - "${KAFKA_UI_BIND_ADDRESS:-127.0.0.1}:8089:8080"
+    networks: [kafka]
+
+networks:
+  kafka:
+    name: rutaexpress-kafka
+    external: true
