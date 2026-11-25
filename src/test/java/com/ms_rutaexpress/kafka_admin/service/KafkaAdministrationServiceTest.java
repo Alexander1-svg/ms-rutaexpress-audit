@@ -194,7 +194,7 @@ class KafkaAdministrationServiceTest {
     private KafkaAdminProperties properties(boolean writeEnabled) {
         return new KafkaAdminProperties(
                 List.of("localhost:9092"), "PLAINTEXT", Duration.ofSeconds(2),
-                3, (short) 1, writeEnabled,
+                3, (short) 1, 604_800_000L, writeEnabled,
                 List.of(
                         "rutaexpress.shipments.events.v1",
                         "rutaexpress.shipments.analytics.v1",

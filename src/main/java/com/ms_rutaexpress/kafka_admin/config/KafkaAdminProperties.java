@@ -18,6 +18,7 @@ public record KafkaAdminProperties(
         @NotNull Duration requestTimeout,
         @Min(1) int defaultPartitions,
         @Min(1) short defaultReplicationFactor,
+        @Min(60000) long defaultRetentionMs,
         boolean writeEnabled,
         @NotNull List<@NotBlank String> analyticsTopics,
         @NotNull List<@NotBlank String> protectedTopics
@@ -28,4 +29,3 @@ public record KafkaAdminProperties(
         protectedTopics = protectedTopics == null ? List.of() : List.copyOf(protectedTopics);
     }
 }
-
