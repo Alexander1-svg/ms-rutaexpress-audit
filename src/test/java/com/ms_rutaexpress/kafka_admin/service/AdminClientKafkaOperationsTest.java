@@ -96,7 +96,7 @@ class AdminClientKafkaOperationsTest {
     private KafkaAdminProperties properties() {
         return new KafkaAdminProperties(
                 List.of("localhost:9092"), "PLAINTEXT", Duration.ofMillis(100),
-                3, (short) 1, true, List.of(), List.of()
+                3, (short) 1, 604_800_000L, true, List.of(), List.of()
         );
     }
 }

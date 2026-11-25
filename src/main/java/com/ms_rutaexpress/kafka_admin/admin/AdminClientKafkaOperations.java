@@ -16,6 +16,7 @@ import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.AuthorizationException;
 import org.apache.kafka.common.errors.BrokerNotAvailableException;
@@ -29,6 +30,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -40,10 +42,12 @@ public class AdminClientKafkaOperations implements KafkaAdminOperations {
 
     private final Admin admin;
     private final Duration timeout;
+    private final long defaultRetentionMs;
 
     public AdminClientKafkaOperations(Admin admin, KafkaAdminProperties properties) {
         this.admin = admin;
         this.timeout = properties.requestTimeout();
+        this.defaultRetentionMs = properties.defaultRetentionMs();
     }
 
     @Override
@@ -90,7 +94,9 @@ public class AdminClientKafkaOperations implements KafkaAdminOperations {
             short replicationFactor,
             Map<String, String> configs
     ) {
-        NewTopic topic = new NewTopic(topicName, partitions, replicationFactor).configs(configs);
+        Map<String, String> effectiveConfigs = new HashMap<>(configs == null ? Map.of() : configs);
+        effectiveConfigs.putIfAbsent(TopicConfig.RETENTION_MS_CONFIG, String.valueOf(defaultRetentionMs));
+        NewTopic topic = new NewTopic(topicName, partitions, replicationFactor).configs(effectiveConfigs);
         await(admin.createTopics(List.of(topic)).all(), topicName);
     }
 
